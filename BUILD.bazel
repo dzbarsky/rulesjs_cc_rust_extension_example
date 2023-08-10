@@ -1,0 +1,98 @@
+load("@crate_index//:defs.bzl", "crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_static_library")
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+
+config_setting(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "linux_amd64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "macos_arm64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "macos_amd64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+alias(
+    name = "nodejs_headers",
+    actual = select({
+        ":linux_amd64": "@nodejs_linux_amd64//:headers",
+        ":linux_arm64": "@nodejs_linux_arm64//:headers",
+        ":macos_amd64": "@nodejs_darwin_amd64//:headers",
+        ":macos_arm64": "@nodejs_darwin_arm64//:headers",
+    }),
+)
+
+cc_library(
+    name = "native",
+    srcs = ["native.cc"],
+    deps = [":nodejs_headers"],
+    copts = ["--std=c++17"],
+)
+
+rust_static_library(
+    name = "rust_lib",
+    srcs = ["lib.rs"],
+    edition = "2021",
+    deps = crate_deps([
+        "napi",
+    ]) + [
+        ":native",
+    ],
+    proc_macro_deps = crate_deps([
+        "napi-derive",
+    ]),
+) 
+
+# Use cc_import so we can set alwayslink=1, which prevents the
+# linker from discarding the symbols that Node will call
+cc_import(
+    name = "rust_lib_cc",
+    static_library = ":rust_lib",
+    alwayslink = 1,
+)
+
+cc_binary(
+    name = "rust_lib.so",
+    linkopts = [
+        # TODO(zbarsky): I think we only need this on OSX
+        "-Wl,-undefined,dynamic_lookup",
+    ],
+    deps = [ "rust_lib_cc"],
+)
+
+
+# Not strictly necessary but index.node matches the name node-gyp produces
+genrule(
+    name = "copy_binding",
+    cmd = "cp $(location :rust_lib.so) $(location :index.node)",
+    outs = ["index.node"],
+    srcs = ["rust_lib.so"],
+)
+
+js_test(
+    name = "test",
+    entry_point = "test.js",
+    data = [":index.node"],
+)

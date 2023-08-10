@@ -1,0 +1,12 @@
+[package]
+name = "demo"
+version = "0.0.0"
+
+# Mandatory (or Cargo tooling is unhappy)
+[lib]
+path = "fake_lib.rs"
+
+[dependencies]
+napi-derive = "2.12.3"
+#napi-sys = "2.2.3"
+napi = "2.12.5"
